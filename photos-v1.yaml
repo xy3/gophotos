@@ -1,0 +1,120 @@
+swagger: "2.0"
+info:
+
+paths:
+  /photos:
+    delete:
+      responses:
+        200:
+          description: OK
+        default:
+          description: Error
+      operationId: deletePhoto
+    get:
+      responses:
+        200:
+          description: OK
+        default:
+          description: Error
+      operationId: getPhotos
+    put:
+      responses:
+        200:
+          description: OK
+        default:
+          description: Error
+      operationId: uploadPhoto
+  /photos/download:
+    get:
+      responses:
+        200:
+          description: OK
+        default:
+          description: Error
+      operationId: downloadPhoto
+  /users:
+    delete:
+      responses:
+        200:
+          description: OK
+        default:
+          description: Error
+      operationId: deleteUser
+    get:
+      responses:
+        200:
+          description: OK
+        default:
+          description: Error
+      operationId: getUser
+  /users/signup:
+    post:
+      responses:
+        200:
+          description: OK
+        default:
+          description: Error
+      operationId: signup
+
+definitions:
+  Photo:
+    properties:
+      created_at:
+        format: date-time
+        type: string
+        x-go-name: CreatedAt
+      extension:
+        type: string
+        x-go-name: Extension
+      file_hash:
+        type: string
+        x-go-name: FileHash
+      file_name:
+        type: string
+        x-go-name: FileName
+      id:
+        format: int64
+        type: integer
+        x-go-name: ID
+      size:
+        format: int64
+        type: integer
+        x-go-name: Size
+      updated_at:
+        format: date-time
+        type: string
+        x-go-name: UpdatedAt
+      user_id:
+        format: int64
+        type: integer
+        x-go-name: UserID
+    type: object
+    x-go-package: github.com/xy3/photos/schema
+  User:
+    properties:
+      created_at:
+        format: date-time
+        type: string
+        x-go-name: CreatedAt
+      id:
+        format: int64
+        type: integer
+        x-go-name: ID
+      name:
+        type: string
+        x-go-name: Name
+      password:
+        type: string
+        x-go-name: Password
+      storage_path:
+        type: string
+        x-go-name: StoragePath
+      updated_at:
+        format: date-time
+        type: string
+        x-go-name: UpdatedAt
+      username:
+        type: string
+        x-go-name: Email
+    type: object
+    x-go-package: github.com/xy3/photos/schema
