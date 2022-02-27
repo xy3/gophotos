@@ -21,6 +21,7 @@ If you use Insomnia you can import the spec using this button:
 
 [![Run in Insomnia}](https://insomnia.rest/images/run.svg)](https://insomnia.rest/run/?label=Photo%20gallery&uri=https%3A%2F%2Fraw.githubusercontent.com%2Fxy3%2Fgophotos%2Fmain%2Fphotos-v1.yaml)
 
+You may also import the insomnia tests in this repo called `InsomniaGoPhotosTests.json`
 
 ### Functionality
 
