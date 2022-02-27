@@ -1,0 +1,5 @@
+{
+  "SqliteDSN": "file:photos.sqlite",
+  "Host": "localhost:8090",
+  "BasePath": "/api/v1"
+}
