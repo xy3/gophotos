@@ -7,94 +7,154 @@ import (
 	"github.com/xy3/photos"
 	"github.com/xy3/photos/schema"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path"
 	"strconv"
 )
 
-// PhotosHandler maps routes on the /photos path
-func PhotosHandler(w http.ResponseWriter, r *http.Request) {
+const (
+	DefaultPageSize = 10
+	DefaultPage     = 0
+)
+
+// Photo handles requests on the /photo path
+func Photo(w http.ResponseWriter, r *http.Request) {
 	email, _, _ := r.BasicAuth()
 	user := photos.EmailToUserCache[email]
-	if user.ID == 0 {
-		http.Error(w, "not authorized", http.StatusUnauthorized)
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
-		if r.URL.Query().Has("photo_id") {
-			getPhoto(w, r, user)
-		} else {
-			getPhotos(w, r, user)
-		}
+		getPhoto(w, r, user)
 	case http.MethodDelete:
 		deletePhoto(w, r, user)
 	case http.MethodPut:
 		uploadPhoto(w, r, user)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		invalidMethodError(w)
 	}
 }
 
-// swagger:route GET /photos/download downloadPhoto
-func DownloadPhoto(w http.ResponseWriter, r *http.Request) {
+// PhotoInfo handles requests on the /photo/info path
+func PhotoInfo(w http.ResponseWriter, r *http.Request) {
 	email, _, _ := r.BasicAuth()
 	user := photos.EmailToUserCache[email]
-	if user.ID == 0 {
-		http.Error(w, "not authorized", http.StatusUnauthorized)
-		return
+	switch r.Method {
+	case http.MethodGet:
+		getPhotoInfo(w, r, user)
+	case http.MethodPatch:
+		updatePhotoInfo(w, r, user)
+	default:
+		invalidMethodError(w)
 	}
+}
 
-	if !r.URL.Query().Has("photo_hash") {
-		http.Error(w, "photo_hash query parameter is missing", http.StatusBadRequest)
-		return
+// PhotoList handles requests on the /photo/list path
+func PhotoList(w http.ResponseWriter, r *http.Request) {
+	email, _, _ := r.BasicAuth()
+	user := photos.EmailToUserCache[email]
+	switch r.Method {
+	case http.MethodGet:
+		getPhotoList(w, r, user)
+	default:
+		invalidMethodError(w)
 	}
+}
 
-	photoHash := r.URL.Query().Get("photo_hash")
-
-	var extension string
-	row := photos.DB.QueryRow("select extension from photos where file_hash = ? and user_id = ?", photoHash, user.ID)
-	err := row.Scan(&extension)
+// updatePhotoInfo PATCH /photo/info
+// Update information about a photo on the server
+func updatePhotoInfo(w http.ResponseWriter, r *http.Request, user schema.User) {
+	photo := schema.Photo{}
+	err := json.NewDecoder(r.Body).Decode(&photo)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		errorMsg(w, "could not decode request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if photo.ID == 0 {
+		errorMsg(w, "photo ID is missing", http.StatusBadRequest)
 		return
 	}
 
-	imagePath := path.Join(user.StoragePath, photoHash, extension)
+	var exists bool
+	result := photos.DB.QueryRow("select exists (select * from photos where id = ? and user_id = ?)", photo.ID, user.ID)
+	result.Scan(&exists)
+	if !exists {
+		errorMsg(w, "the photo id provided does not match a photo in your account", http.StatusNotFound)
+		return
+	}
+
+	tx, err := photos.DB.Begin()
+	if err != nil {
+		errorMsg(w, "could not initialize database transaction", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = tx.Exec("update photos set size = ?, file_name = ?, file_hash = ?, extension = ?, updated_at = CURRENT_TIMESTAMP where id = ? and user_id = ?", photo.Size, photo.FileName, photo.FileHash, photo.Extension, photo.ID, user.ID)
+	if err != nil {
+		_ = tx.Rollback()
+		errorMsg(w, "failed to update photo information: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = tx.Commit()
+	w.WriteHeader(http.StatusOK)
+}
+
+// getPhoto GET /photo
+func getPhoto(w http.ResponseWriter, r *http.Request, user schema.User) {
+	if !r.URL.Query().Has("photo_id") {
+		errorMsg(w, "photo_hash query parameter is missing", http.StatusBadRequest)
+		return
+	}
+
+	photoId := r.URL.Query().Get("photo_id")
+
+	var (
+		fileHash  string
+		extension string
+	)
+
+	row := photos.DB.QueryRow("select file_hash, extension from photos where id = ? and user_id = ?", photoId, user.ID)
+	err := row.Scan(&fileHash, &extension)
+	if err != nil {
+		errorMsg(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	imagePath := path.Join(user.StoragePath, fileHash+extension)
 	http.ServeFile(w, r, imagePath)
 }
 
-// getPhoto returns information from the database about a single photo
-// swagger:route GET /photos getPhotoInfo
-func getPhoto(w http.ResponseWriter, r *http.Request, user schema.User) {
-	photoId := r.URL.Query()["photo_id"]
+// getPhotoInfo GET /photo/info
+// Returns information from the database about a single photo
+func getPhotoInfo(w http.ResponseWriter, r *http.Request, user schema.User) {
+	if !r.URL.Query().Has("photo_id") {
+		errorMsg(w, "missing photo_id parameter", http.StatusBadRequest)
+		return
+	}
+	photoId := r.URL.Query().Get("photo_id")
 	row := photos.DB.QueryRow("select * from photos where id = ? and user_id = ?", photoId, user.ID)
-	photo := &schema.Photo{}
+	photo := schema.Photo{}
 	err := row.Scan(&photo.ID, &photo.CreatedAt, &photo.UpdatedAt, &photo.Size, &photo.FileName, &photo.FileHash, &photo.Extension, &photo.UserID)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		errorMsg(w, "not found: "+err.Error(), http.StatusNotFound)
 		return
 	}
-	marshal, err := json.Marshal(photo)
-	if err != nil {
-		http.Error(w, "failed to marshal json", http.StatusInternalServerError)
-		return
-	}
-	w.Write(marshal)
+	photoJson, _ := json.Marshal(photo)
+	w.WriteHeader(http.StatusOK)
+	w.Write(photoJson)
 }
 
-// getPhotos returns paginated information from the database about multiple photos
-// swagger:route GET /photos getPhotos
-func getPhotos(w http.ResponseWriter, r *http.Request, user schema.User) {
+// getPhotoList GET /photo getPhotoList
+// Returns paginated information from the database about multiple photos
+func getPhotoList(w http.ResponseWriter, r *http.Request, user schema.User) {
 	page, err := strconv.Atoi(r.URL.Query().Get("page"))
 	if err != nil {
-		page = 0
+		page = DefaultPage
 	}
 
 	pageSize, err := strconv.Atoi(r.URL.Query().Get("page_size"))
 	if err != nil {
-		pageSize = 10
+		pageSize = DefaultPageSize
 	}
 
 	photoResults := make([]*schema.Photo, 0)
@@ -107,47 +167,61 @@ func getPhotos(w http.ResponseWriter, r *http.Request, user schema.User) {
 	}
 
 	if err = rows.Err(); err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		errorMsg(w, "not found", http.StatusNotFound)
 		return
 	}
-	marshal, err := json.Marshal(photoResults)
+	photosJson, err := json.Marshal(photoResults)
 	if err != nil {
-		http.Error(w, "failed to marshal json", http.StatusInternalServerError)
+		errorMsg(w, "failed to marshal json", http.StatusInternalServerError)
 		return
 	}
-	w.Write(marshal)
+	w.WriteHeader(http.StatusOK)
+	w.Write(photosJson)
 }
 
-// swagger:route DELETE /photos deletePhoto
+// deletePhoto DELETE /photo
 func deletePhoto(w http.ResponseWriter, r *http.Request, user schema.User) {
+	if !r.URL.Query().Has("photo_id") {
+		errorMsg(w, "missing photo_id parameter", http.StatusBadRequest)
+		return
+	}
+	photoId := r.URL.Query().Get("photo_id")
+
+	row := photos.DB.QueryRow("select file_hash, extension from photos where id =?", photoId)
+	var (
+		fileHash  string
+		extension string
+	)
+
+	err := row.Scan(&fileHash, &extension)
+	if err != nil {
+		errorMsg(w, "failed to find photo file in the database", http.StatusNotFound)
+		return
+	}
+
+	err = os.Remove(path.Join(user.StoragePath, fileHash+extension))
+	if err != nil {
+		errorMsg(w, "failed to delete the photo file on the disk: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	tx, err := photos.DB.Begin()
 	if err != nil {
-		http.Error(w, "failed to begin sql transaction", http.StatusInternalServerError)
+		errorMsg(w, "failed to begin sql transaction", http.StatusInternalServerError)
 		return
 	}
-	if !r.Form.Has("photo_hash") {
-		http.Error(w, "photo_hash query parameter is missing", http.StatusBadRequest)
-		return
-	}
-	photoHash := r.Form.Get("photo_hash")
 
-	// hacky, but ran out of time
-	_ = os.Remove(path.Join(user.StoragePath, photoHash+".jpg"))
-	_ = os.Remove(path.Join(user.StoragePath, photoHash+".png"))
-	_ = os.Remove(path.Join(user.StoragePath, photoHash+".webp"))
-	_ = os.Remove(path.Join(user.StoragePath, photoHash+".jpeg"))
-
-	_, err = tx.Exec("delete from photos where file_hash = ? and user_id = ?", photoHash, user.ID)
+	_, err = tx.Exec("delete from photos where id = ? and user_id = ?", photoId, user.ID)
 	if err != nil {
-		tx.Rollback()
-		http.Error(w, "failed to delete photo from database", http.StatusInternalServerError)
+		_ = tx.Rollback()
+		errorMsg(w, "failed to delete photo from database", http.StatusInternalServerError)
 	}
 	tx.Commit()
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("deleted successfully"))
 }
 
-// swagger:route PUT /photos uploadPhoto
+// uploadPhoto PUT /photo
+// Upload a photo to the server
 func uploadPhoto(w http.ResponseWriter, r *http.Request, user schema.User) {
 	// 10 << 20 = max 10MB upload
 	r.ParseMultipartForm(10 << 20)
@@ -159,8 +233,6 @@ func uploadPhoto(w http.ResponseWriter, r *http.Request, user schema.User) {
 	}
 	defer file.Close()
 	fmt.Printf("Uploaded File: %+v\n", handler.Filename)
-	fmt.Printf("File Size: %+v\n", handler.Size)
-	fmt.Printf("MIME Header: %+v\n", handler.Header)
 
 	fileBytes, err := ioutil.ReadAll(file)
 	if err != nil {
@@ -168,9 +240,10 @@ func uploadPhoto(w http.ResponseWriter, r *http.Request, user schema.User) {
 	}
 
 	sum := md5.Sum(fileBytes)
-	fileHash := string(sum[:])
-	openFile, err := os.OpenFile(path.Join(user.StoragePath, fileHash), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	fileHash := fmt.Sprintf("%x", sum[:])
+	openFile, err := os.OpenFile(path.Join(user.StoragePath, fileHash+path.Ext(handler.Filename)), os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
+		log.Println(err)
 		return
 	}
 	defer openFile.Close()
@@ -178,14 +251,24 @@ func uploadPhoto(w http.ResponseWriter, r *http.Request, user schema.User) {
 	tx, _ := photos.DB.Begin()
 	_, err = tx.Exec("insert into photos (size, file_name, file_hash, extension, user_id) values (?, ?, ?, ?, ?)", handler.Size, handler.Filename, fileHash, path.Ext(handler.Filename), user.ID)
 	if err != nil {
-		http.Error(w, "failed to add file to database, photo not created", http.StatusInternalServerError)
-		tx.Rollback()
+		errorMsg(w, "failed to add file to database, photo not created: "+err.Error(), http.StatusInternalServerError)
+		_ = tx.Rollback()
 		return
 	}
-	tx.Commit()
 
-	openFile.Write(fileBytes)
-	fmt.Fprintf(w, "Successfully Uploaded File\n")
-	w.Write([]byte("success"))
-	w.WriteHeader(http.StatusOK)
+	if _, err = openFile.Write(fileBytes); err != nil {
+		errorMsg(w, "failed to write file data to disk: "+err.Error(), http.StatusInternalServerError)
+		_ = tx.Rollback()
+		return
+	}
+
+	newPhoto := schema.Photo{}
+	result := tx.QueryRow("select * from photos where file_hash = ?", fileHash)
+	result.Scan(&newPhoto.ID, &newPhoto.CreatedAt, &newPhoto.UpdatedAt, &newPhoto.Size, &newPhoto.FileName, &newPhoto.FileHash, &newPhoto.Extension, &newPhoto.UserID)
+
+	_ = tx.Commit()
+	fmt.Printf("Successfully uploaded File: %+v\n", newPhoto)
+
+	photoJson, _ := json.Marshal(newPhoto)
+	w.Write(photoJson)
 }

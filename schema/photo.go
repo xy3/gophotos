@@ -4,7 +4,7 @@ import "time"
 
 // swagger:model Photo
 type Photo struct {
-	ID        int       `json:"id,omitempty" sql:"primary"`
+	ID        int       `json:"id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt *time.Time `json:"updated_at"`
 	Size      int64     `json:"size,omitempty"`

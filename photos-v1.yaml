@@ -1,120 +1,306 @@
-swagger: "2.0"
+openapi: 3.0.0
+servers:
+  - description: SwaggerHub API Auto Mocking
+    url: https://virtserver.swaggerhub.com/xy3/photo-gallery/1.0.0
 info:
+  version: "1.0.0"
+  title: Go Photos API
+  description: >-
+    This is a simple project to demonstrate a photo-storage API.
+    It uses basic authentication for simplicity and allows users to signup, authenticate and manage photos on the server.
+  contact:
+    name: Theodore Coyne Morgan
+    email: hi@theodore.ie
+
+security:
+  - basicAuth: [ ]
 
 paths:
-  /photos:
-    delete:
-      responses:
-        200:
-          description: OK
-        default:
-          description: Error
-      operationId: deletePhoto
+  /photo:
     get:
+      parameters:
+        - in: query
+          name: photo_id
+          schema:
+            type: integer
+          required: true
+      summary: Download or view a photo
       responses:
-        200:
+        '200':
           description: OK
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
         default:
           description: Error
-      operationId: getPhotos
-    put:
-      responses:
-        200:
-          description: OK
-        default:
-          description: Error
-      operationId: uploadPhoto
-  /photos/download:
-    get:
-      responses:
-        200:
-          description: OK
-        default:
-          description: Error
-      operationId: downloadPhoto
-  /users:
-    delete:
-      responses:
-        200:
-          description: OK
-        default:
-          description: Error
-      operationId: deleteUser
-    get:
-      responses:
-        200:
-          description: OK
-        default:
-          description: Error
-      operationId: getUser
-  /users/signup:
-    post:
-      responses:
-        200:
-          description: OK
-        default:
-          description: Error
-      operationId: signup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/v1.Error"
 
-definitions:
-  Photo:
-    properties:
-      created_at:
-        format: date-time
-        type: string
-        x-go-name: CreatedAt
-      extension:
-        type: string
-        x-go-name: Extension
-      file_hash:
-        type: string
-        x-go-name: FileHash
-      file_name:
-        type: string
-        x-go-name: FileName
-      id:
-        format: int64
-        type: integer
-        x-go-name: ID
-      size:
-        format: int64
-        type: integer
-        x-go-name: Size
-      updated_at:
-        format: date-time
-        type: string
-        x-go-name: UpdatedAt
-      user_id:
-        format: int64
-        type: integer
-        x-go-name: UserID
-    type: object
-    x-go-package: github.com/xy3/photos/schema
-  User:
-    properties:
-      created_at:
-        format: date-time
-        type: string
-        x-go-name: CreatedAt
-      id:
-        format: int64
-        type: integer
-        x-go-name: ID
-      name:
-        type: string
-        x-go-name: Name
-      password:
-        type: string
-        x-go-name: Password
-      storage_path:
-        type: string
-        x-go-name: StoragePath
-      updated_at:
-        format: date-time
-        type: string
-        x-go-name: UpdatedAt
-      username:
-        type: string
-        x-go-name: Email
-    type: object
-    x-go-package: github.com/xy3/photos/schema
+    put:
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                photo:
+                  type: string
+                  format: binary
+      summary: Upload a photo
+      responses:
+        '200':
+          description: Uploaded photo information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Photo"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/v1.Error"
+
+    delete:
+      parameters:
+        - in: query
+          name: photo_id
+          schema:
+            type: integer
+          required: true
+      summary: Delete a photo
+      responses:
+        '200':
+          description: OK
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/v1.Error"
+
+  /photo/info:
+    parameters:
+      - in: query
+        name: photo_id
+        schema:
+          type: integer
+        required: true
+
+    get:
+      summary: Get information about a photo
+      responses:
+        '200':
+          description: Photo information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Photo"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/v1.Error"
+
+    patch:
+      summary: Update information for a photo
+      responses:
+        '200':
+          description: OK
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/v1.Error"
+
+  /photo/list:
+    parameters:
+      - in: query
+        name: page
+        schema:
+          type: integer
+        required: false
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+        required: false
+
+    get:
+      summary: List photos with pagination
+      responses:
+        '200':
+          description: List of photos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Photo"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/v1.Error"
+
+
+  /user:
+    get:
+      summary: Get information about the current user
+      responses:
+        '200':
+          description: User information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/v1.Error"
+    delete:
+      summary: Delete the current user's profile
+      responses:
+        '200':
+          description: OK
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/v1.Error"
+
+  /user/signup:
+    parameters:
+      - in: query
+        name: email
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: password
+        schema:
+          type: string
+        required: true
+    post:
+      summary: Signup an account
+      responses:
+        '200':
+          description: OK
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/v1.Error"
+      security: [ ]
+
+  /user/signin:
+    parameters:
+      - in: query
+        name: email
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: password
+        schema:
+          type: string
+        required: true
+    post:
+      summary: Authenticate a user
+      security: [ ]
+      responses:
+        '200':
+          description: OK
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/v1.Error"
+
+components:
+  schemas:
+    v1.Error:
+      type: object
+      properties:
+        status:
+          type: integer
+        message:
+          type: string
+    Photo:
+      properties:
+        created_at:
+          format: date-time
+          type: string
+          x-go-name: CreatedAt
+        extension:
+          type: string
+          x-go-name: Extension
+        file_hash:
+          type: string
+          x-go-name: FileHash
+        file_name:
+          type: string
+          x-go-name: FileName
+        id:
+          format: int64
+          type: integer
+          x-go-name: ID
+        size:
+          format: int64
+          type: integer
+          x-go-name: Size
+        updated_at:
+          format: date-time
+          type: string
+          x-go-name: UpdatedAt
+        user_id:
+          format: int64
+          type: integer
+          x-go-name: UserID
+      type: object
+      x-go-package: github.com/xy3/photos/schema
+    User:
+      properties:
+        created_at:
+          format: date-time
+          type: string
+          x-go-name: CreatedAt
+        id:
+          format: int64
+          type: integer
+          x-go-name: ID
+        name:
+          type: string
+          x-go-name: Name
+        password:
+          type: string
+          x-go-name: Password
+        storage_path:
+          type: string
+          x-go-name: StoragePath
+        updated_at:
+          format: date-time
+          type: string
+          x-go-name: UpdatedAt
+        username:
+          type: string
+          x-go-name: Email
+      type: object
+      x-go-package: github.com/xy3/photos/schema
+
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic

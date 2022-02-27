@@ -1,1 +1,4 @@
-photo_storage/
+photos_storage/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
